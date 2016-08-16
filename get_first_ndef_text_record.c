@@ -55,7 +55,7 @@ struct s_cmdResponse
 
 int readPage(int aI2CDevice, char aPage, unsigned char* aTagBuffer, int* aTagBufferLen)
 {
-  int ret = 0;
+  int ret = BCM2835_I2C_REASON_ERROR_NACK; // Just needs to be not BCM2835_I2C_REASON_OK
   int i;
   struct s_cmdResponse* resp;
 
@@ -63,13 +63,21 @@ int readPage(int aI2CDevice, char aPage, unsigned char* aTagBuffer, int* aTagBuf
   cmdBuffer[0] = 2;
   cmdBuffer[1] = SL030_READ_PAGE;
   cmdBuffer[2] = aPage;
-  ret = bcm2835_i2c_write(cmdBuffer, 3);
+  int tries = 0;
+  while ((tries++ < 12) && (ret != BCM2835_I2C_REASON_OK))
+  {
+    bcm2835_i2c_begin();
+  
+    bcm2835_i2c_setSlaveAddress(SL030_ID);
+    ret = bcm2835_i2c_write(cmdBuffer, 3);
 #if DEBUG
-  printf("write returned %d\n", ret);
+    printf("write returned %d\n", ret);
 #endif
-  usleep(12000);
-  memset(cmdBuffer, 0, CMD_BUF_LEN);
-  ret = bcm2835_i2c_read(cmdBuffer, cmdBufferLen);
+    usleep(12000);
+    memset(cmdBuffer, 0, CMD_BUF_LEN);
+    ret = bcm2835_i2c_read(cmdBuffer, cmdBufferLen);
+    bcm2835_i2c_end();
+  }
 #if DEBUG
   printf("read returned %d\n", ret);
   for (i = 0; i < cmdBufferLen; i++)
@@ -163,15 +171,11 @@ int main(void)
   int page = 4; // skip the first four pages as they hold general info on the tag
   int pageLen = MAX_TAG_ID_LENGTH;
   int contentIdx = 0; // where in the content buffer we're up to
-  bcm2835_i2c_begin();
-
-  bcm2835_i2c_setSlaveAddress(SL030_ID);
   while ((contentIdx < kContentsBufferLen) && readPage(fd, page, &gContentsBuffer[contentIdx], &pageLen))
   {
     contentIdx += pageLen;
     page++; // move onto the next page
   }
-  bcm2835_i2c_end();
 #if DEBUG
   printf("Read in %d bytes\n", contentIdx);
   int i;
